@@ -1,0 +1,47 @@
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+.eslintcache
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+lerna-debug.log*
+
+# Diagnostic reports
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage and build artifacts
+lib-cov
+coverage
+.nyc_output
+.grunt
+build/Release
+.cache
+.parcel-cache
+dist
+out
+.next
+.nuxt
+.vuepress/dist
+.serverless/
+.dynamodb/
+
+# Environment variables
+.env
+.env.test
+
+# Editors and OS files
+.vscode-test
+.tern-port
