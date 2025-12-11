@@ -33,6 +33,7 @@ const listObjects = async ({ Bucket, Prefix = "", MaxKeys = 1000, ContinuationTo
 };
 
 const app = express();
+app.set('trust proxy', 1); // Trust the first proxy (e.g., Render, Nginx)
 app.use(helmet());
 app.use(cors({ origin: process.env.CORS_ORIGIN || "*" })); // Allow specific origins in production
 app.use(express.json());
