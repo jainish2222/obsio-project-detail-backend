@@ -13,6 +13,7 @@ requiredEnv.forEach((key) => {
     process.exit(1);
   }
 });
+
 const s3 = new S3Client({
   region: process.env.AWS_REGION,
   credentials: {
@@ -33,11 +34,10 @@ const listObjects = async ({ Bucket, Prefix = "", MaxKeys = 1000, ContinuationTo
 };
 
 const app = express();
-app.set('trust proxy', 1); // Trust the first proxy (e.g., Render, Nginx)
+app.set("trust proxy", 1);
 app.use(helmet());
-app.use(cors({ origin: process.env.CORS_ORIGIN || "*" })); // Allow specific origins in production
+app.use(cors({ origin: process.env.CORS_ORIGIN || "*" }));
 app.use(express.json());
-
 
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -48,31 +48,68 @@ app.use("/api/", apiLimiter);
 
 const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
+// -------------------
+// CACHE SETUP
+// -------------------
+let cachedImages = [];
+let cachedFolders = {};
+
+const refreshImages = async () => {
+  try {
+    const data = await listObjects({ Bucket: process.env.AWS_BUCKET });
+    cachedImages = data.Contents?.map((file) => ({
+      key: file.Key,
+      url: `https://${process.env.AWS_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${file.Key}`,
+    })) || [];
+    console.log(`✅ Cached ${cachedImages.length} images`);
+  } catch (err) {
+    console.error("Failed to refresh S3 images:", err);
+  }
+};
+
+const refreshFolder = async (folder) => {
+  try {
+    const data = await listObjects({ Bucket: process.env.AWS_BUCKET, Prefix: `${folder}/` });
+    cachedFolders[folder] = data.Contents?.map((file) => ({
+      key: file.Key,
+      url: `https://${process.env.AWS_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${file.Key}`,
+    })) || [];
+    console.log(`✅ Cached ${cachedFolders[folder]?.length || 0} images for folder "${folder}"`);
+  } catch (err) {
+    console.error(`Failed to refresh folder "${folder}":`, err);
+  }
+};
+
+// Initial cache
+refreshImages();
+
+// Refresh cache every 45 seconds
+setInterval(refreshImages, 45 * 1000);
+setInterval(() => {
+  Object.keys(cachedFolders).forEach(folder => refreshFolder(folder));
+}, 45 * 1000);
+
+// -------------------
+// ROUTES
+// -------------------
 app.get("/", (req, res) => res.json({ message: "S3 Image Server is Running..." }));
 
-app.get("/api/images", asyncHandler(async (req, res) => {
-  const data = await listObjects({ Bucket: process.env.AWS_BUCKET });
-  const images = data.Contents?.map((file) => ({
-    key: file.Key,
-    url: `https://${process.env.AWS_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${file.Key}`,
-  })) || [];
-  res.json(images);
-}));
+// Return cached images instantly
+app.get("/api/images", (req, res) => {
+  res.json(cachedImages);
+});
 
-
+// Return cached folder images, fetch in background if not present
 app.get(/^\/api\/images\/(.+)$/, asyncHandler(async (req, res) => {
-  const folderPath = req.params[0];
-  const data = await listObjects({
-    Bucket: process.env.AWS_BUCKET,
-    Prefix: `${folderPath}/`,
-  });
+  const folder = req.params[0];
 
-  const images = data.Contents?.map((file) => ({
-    key: file.Key,
-    url: `https://${process.env.AWS_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${file.Key}`,
-  })) || [];
+  if (!cachedFolders[folder]) {
+    // Fetch in background but respond immediately
+    refreshFolder(folder);
+    return res.json([]); // return empty array first time
+  }
 
-  res.json(images);
+  res.json(cachedFolders[folder]);
 }));
 
 app.use((err, req, res, next) => {
